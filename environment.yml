@@ -1,0 +1,33 @@
+name: Evolutionary_inversion_soil
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - matplotlib=3.10.0
+  - pandas=2.3.1
+  - pip=25.1
+  - pyarrow=19.0.0
+  - tqdm=4.67.1
+  - xarray=2025.4.0
+  - jupyterlab=4.4.4
+
+  - pip:
+      - deap==1.4.3
+      - devito==4.8.18
+      - disba==0.7.0
+      - fiona==1.10.1
+      - gemgis==1.1.8
+      - gempy==2025.1.0
+      - gempy-engine==2025.1.1
+      - gempy-viewer==2025.1.1
+      - geopandas==1.1.1
+      - numpy==2.2.6
+      - imageio==2.37.0
+      - pyproj==3.7.1
+      - pyrocko==2025.1.21
+      - pyshp==2.3.1
+      - pytools==2025.2.1
+      - pyvista==0.45.2
+      - shapely==2.1.1
+      - verde==1.8.1
+      - vtk==9.4.2
