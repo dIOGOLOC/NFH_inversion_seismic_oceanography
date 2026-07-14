@@ -95,12 +95,10 @@ FOLDER_OUTPUT = config.get('paths', 'FOLDER_OUTPUT')
 ## (Note: This should point to the saved numpy/netcdf file of the specific month, already interpolated)
 MODEL_VP0 = config.get('clima', 'MODEL_VP0')
 
-<<<<<<< HEAD
 ## -----------------------------------------------
 ## File with the initial density model from Glorys
 ## (Note: This should point to the saved numpy/netcdf file of the specific month, already interpolated)
 MODEL_RHO0 = config.get('clima', 'MODEL_RHO0')
-
 
 # -------
 # sismica
@@ -124,159 +122,11 @@ DZ = config.getfloat('sismica', 'DZ')
 ## ---------------------------------------------------------------
 ## Central frequency of the source wavelet / low-pass filter in Hz
 F_PICO = config.getfloat('sismica', 'F_PICO')
-=======
-## --------------
-## Density ranges (g/cm³)
-S_VELOCITY_RANGES = ast.literal_eval(config.get('model', 'S_VELOCITY_RANGES'))
-
-## -----------
-## VpVs ranges (dimensionless)
-VPVS_RANGES = ast.literal_eval(config.get('model', 'VPVS_RANGES'))
-
-## -------------------------
-## S-wave velocity  basement (m/s²)
-S_VELOCITY_BASEMENT = config.getfloat('model', 'S_VELOCITY_BASEMENT')
-
-## -------------
-## VpVs basement (dimensionless)
-VPVS_BASEMENT = config.getfloat('model', 'VPVS_BASEMENT')
-
-## -------------------------------------
-## Maximum total thickness of all layers (m)
-MAX_TOTAL = config.getfloat('model', 'MAX_TOTAL')
-
-## -------------------------------
-## Random seed for reproducibility
-SEED = config.getint('model', 'SEED')
-
-# ----------
-# propagator
-# ----------
-
-## ---------------------------
-## DEEPWAVE Elastic Propagator - https://ausargeo.com/deepwave/elastic
-## The elastic propagator has three model parameters (the P and S wavespeeds and the Density)
-## Deepwave internally uses lambda, mu ,and buoyancy (the two Lamé parameters and the reciprocal of density).
-
-## -----
-## MODEL
-
-## Horizontal grid cell size in meters [default=2 cm]
-DX = config.getfloat('propagator', 'DX')
-
-## Vertical grid cell size in meters [default=2 cm]
-DZ = config.getfloat('propagator', 'DZ')
-
-## Total number of horizontal grid points [default=5000 points]
-NX = config.getint('propagator', 'NX')
-
-## Total number of vertical grid points [default=100 points]
-NZ = config.getint('propagator', 'NZ')
-
-## ---
-## PML
-
-## Original: top=1 (free surface), left/right/bottom = absorbing
-## Deepwave pml_width = [top, bottom, left, right]
-## Number of absorbing boundary points
-
-PML_WIDTH = ast.literal_eval(config.get('propagator', 'PML_WIDTH'))
-
-## -------
-## SOURCES
-
-## Total number of independent seismic shots to simulate
-N_SHOTS = config.getint('propagator', 'N_SHOTS')
-
-## Number of sources activated simultaneously per shot.
-N_SHOTS_PER_SHOT = config.getint('propagator', 'N_SHOTS_PER_SHOT')
-
-## Horizontal spacing between consecutive shot locations in grid points.
-D_SOURCE = config.getint('propagator', 'D_SOURCE')
-
-## Horizontal grid index for the first source location.
-FIRST_SOURCE = config.getint('propagator', 'FIRST_SOURCE')
-
-## Vertical grid index for the source (0 for surface).
-SOURCE_DEPTH = config.getint('propagator', 'SOURCE_DEPTH')
-
-## ---------
-## RECEIVERS
-
-## Total number of active receivers per shot.
-N_RECEIVERS_PER_SHOT = config.getint('propagator', 'N_RECEIVERS_PER_SHOT')
-
-## Horizontal spacing between adjacent receivers in grid points.
-D_RECEIVERS = config.getint('propagator', 'D_RECEIVERS') 
-
-## Horizontal grid index for the first receiver (sets the initial offset).
-FIRST_RECEIVERS = config.getint('propagator', 'FIRST_RECEIVERS')
-
-## Vertical grid index for the receiver array (0 for surface).
-RECEIVERS_DEPTH = config.getint('propagator', 'RECEIVERS_DEPTH')
-
-## -------
-## WAVELET  
-
-## Central frequency of the Ricker source wavelet in Hertz.
-FREQ = config.getfloat('propagator', 'FREQ')
-
-## Total number of discrete time steps to simulate and record.
-NT = config.getint('propagator', 'NT')
-
-## Time step duration in seconds, set to satisfy the CFL stability condition.
-DT = config.getfloat('propagator', 'DT')
-
-## The finite difference order of accuracy. Possible values are 2 and 8. [default=8].
-ACCURACY = config.getint('propagator', 'ACCURACY')
-
-## -------------------
-## DISPERSION ANALYSIS  
-
-# Minimum frequency threshold [Hz]. Frequencies below this are discarded to 
-# prevent picking low-frequency noise artifacts. Default is 50.0.
-MIN_FREQ = config.getfloat('propagator', 'MIN_FREQ')
-
-# Standard deviation for the Gaussian filter used to smooth the image. 
-# Default is 1.0.
-SIGMA = config.getfloat('propagator', 'SIGMA')
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 
 # ----
 # gene
 # ----
 
-<<<<<<< HEAD
-=======
-## ----------------------------------------
-## Minimum thickness of an individual layer (m).
-MIN_THICK_LAYER = config.getfloat('gene', 'MIN_THICK_LAYER')
-
-## ----------------------------------------
-## Maximum thickness of an individual layer  (m)
-MAX_THICK_LAYER = config.getfloat('gene', 'MAX_THICK_LAYER')
-
-## -----------------------------
-## Number of layers of the model (int)
-MAX_LAYERS = config.getint('gene', 'MAX_LAYERS')
-
-## ---------------------------------------
-## First layer bounds for Vs values (m/s).
-LOW_VELS = ast.literal_eval(config.get('gene', 'LOW_VELS'))
-
-## --------------------------------------
-## Last layer bounds for Vs values (m/s).
-UP_VELS = ast.literal_eval(config.get('gene', 'UP_VELS'))
-
-## ---------------
-## First layer bound for Vp/Vs values.
-FL_VPVS = config.getfloat('gene', 'FL_VPVS')
-
-## ---------------
-## Last layer bound for Vp/Vs values.
-LL_VPVS = config.getfloat('gene', 'LL_VPVS')
-
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 ## ----------------------------------
 ## Probability of mutating each value (default=0.02)
 MUTPB = config.getfloat('gene', 'MUTPB')

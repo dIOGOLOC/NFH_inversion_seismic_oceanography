@@ -18,60 +18,16 @@
 # e.g., 'analysis.cnf', 'config.cnf', 'myconfig.cnf', 'test.cnf'...
 #
 # The parameters are divided into several sections:
-<<<<<<< HEAD
 # - [paths]   : default input/output folder paths
 # - [clima]   : default parameters of climatological models (GLORYS, HYCOM, WOD, CTD)
 # - [sismica] : forward modeling parameters (wavelet, sampling rate, grid)
 # - [gene]    : default parameters for the genetic algorithm
-=======
-# - [paths]      : default input/output folder paths
-# - [model]      : default parameters to create the soil model
-# - [propagator] : default parameters to propagate wavefield
-# - [gene]       : default parameters for the genetic algorithm
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 #
 # Before using the scripts, you should at least make sure that the paths in
 # section [paths] are consistent with your own files and folders organization.
 #
 # More information in:
-<<<<<<< HEAD
 # https://docs.python.org/3/library/configparser.html
-=======
-# https://wiki.python.org/moin/ConfigParser
-#
-# ------------------------------------------------------------------------------
-#
-# ========================
-# Examples of Soil Models:
-# ========================
-#
-# Number of layers: 3 horizontal layers
-# Layer depths: Randomly selected from a predefined list of tuples
-#
-#  MWC
-#  ---
-#  depth_ranges = [(0.3, 0.5), (0.8, 1.0), (1.3, 1.5)] # meters
-#  vs_ranges = [(100, 200),(200, 300),(300, 400)] # m/s²
-#  vpvs_ranges = [(5.0, 6.0), (3.5, 4.5), (2.0, 3.0)] # dimensionless
-#
-#  MCP1
-#  ----
-#  depth_ranges = [(0.3, 0.5), (0.8, 1.0), (1.3, 1.5)] # meters
-#  vs_ranges = [(300, 400),(150, 250),(300, 400)] # m/s²
-#  vpvs_ranges = [(2.0, 3.0), (3.0, 4.0), (2.0, 3.0)] # dimensionless
-#
-#  MCP2-1
-#  ------
-#  depth_ranges = [(0.3, 0.5), (0.8, 1.0), (1.3, 1.5)] # meters
-#  vs_ranges = [(100, 200),(300, 500),(300, 400)] # m/s²
-#  vpvs_ranges = [(5.0, 6.0), (2.0, 3.0), (3.0, 4.0)] # dimensionless
-#
-#  MCP2-2
-#  ------
-#  depth_ranges = [(0.4, 0.4), (0.9, 0.9), (1.5, 1.5)] # meters
-#  vs_ranges = [(100, 200),(300, 500),(300, 400)] # m/s²
-#  vpvs_ranges = [(5.0, 6.0), (2.0, 3.0), (3.0, 4.0)] # dimensionless
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 #
 # ------------------------------------------------------------------------------
 
@@ -85,7 +41,7 @@ FOLDER_NAME = NFH
 
 ## -----------------------
 ## Directory of the output (Figures and Files)
-FOLDER_OUTPUT = /media/sysop/14f7ead0-5dcb-4557-a139-55dbb404d11a/diogoloc/dados_posdoc/NFH_inversion/
+FOLDER_OUTPUT = /home/diogoloc/Documents/posdoc/NFH_INVERSION/
 
 #======
 [clima]
@@ -97,16 +53,13 @@ FOLDER_OUTPUT = /media/sysop/14f7ead0-5dcb-4557-a139-55dbb404d11a/diogoloc/dados
 ## and ice parameters from the top to the bottom. 
 ## The global ocean output files are displayed on 50 standard levels. 
 
-<<<<<<< HEAD
-## ---------------------------------------------------
-## File with the initial sound speed model from Glorys
-## (Note: This should point to the saved numpy/netcdf file of the specific month, already interpolated)
-MODEL_VP0 = /media/sysop/14f7ead0-5dcb-4557-a139-55dbb404d11a/diogoloc/dados_posdoc/NFH_INVERSION/glorys_vp0_interpolado_mes.npy
+## ------------------------------------------------------
+## File with the initial sound speed profiles from Glorys
+MODEL_VP0 = /home/diogoloc/Documents/posdoc/NFH_INVERSION/DATA/glorys_vp0_month.npy
 
 ## -----------------------------------------------
-## File with the initial density model from Glorys
-## (Note: This should point to the saved numpy/netcdf file of the specific month, already interpolated)
-MODEL_RHO0 = /media/sysop/14f7ead0-5dcb-4557-a139-55dbb404d11a/diogoloc/dados_posdoc/NFH_INVERSION/glorys_rho0_interpolado_mes.npy
+## File with the average density model from Glorys
+MODEL_RHO0 = /home/diogoloc/Documents/posdoc/NFH_INVERSION/DATA/glorys_rho0_averaged_month.npy
 
 
 #========
@@ -131,189 +84,11 @@ DZ = 20.0
 ## ---------------------------------------------------------------
 ## Central frequency of the source wavelet / low-pass filter in Hz
 F_PICO = 20.0
-=======
-## ------------
-## Depth ranges (in meters)
-depth_ranges = [(0.4, 0.4), (0.9, 0.9), (1.5, 1.5)]
-
-## --------------
-## S-wave velocity ranges (m/s)
-S_VELOCITY_RANGES = [(100, 250),(400, 600),(250, 500)]
-
-## -----------
-## VpVs ranges (dimensionless)
-VPVS_RANGES = [(4.0, 5.0), (2.0, 3.0), (3.0, 4.0)]
-
-## -------------------------
-## S-wave velocity  basement (m/s) [default=800.0 m/s]
-S_VELOCITY_BASEMENT = 800.0
-
-## -------------
-## VpVs basement (dimensionless) [default=2]
-VPVS_BASEMENT = 2
-
-## -------------------------------------
-## Maximum total thickness of all layers [default=2 m]
-MAX_TOTAL = 2.0
-
-## -------------------------------
-## Random seed for reproducibility
-SEED = 24
-
-#===========
-[propagator]
-#===========
-
-## ---------------------------
-## DEEPWAVE Elastic Propagator - https://ausargeo.com/deepwave/elastic
-## The elastic propagator has three model parameters (the P and S wavespeeds and the Density)
-## Deepwave internally uses lambda, mu ,and buoyancy (the two Lamé parameters and the reciprocal of density).
-
-## -----
-## MODEL
-
-## Horizontal grid cell size in meters [default = 0.1 (10 cm)]
-DX = 0.1
-
-## Vertical grid cell size in meters [default = 0.1 (10 cm)]
-DZ = 0.1
-
-## Total number of horizontal grid points [default = 1200 points]
-NX = 1200
-
-## Total number of vertical grid points [default = 20 points]
-NZ = 20
-
-## ---
-## PML
-
-## Original: top=1 (free surface), left/right/bottom = absorbing
-## Deepwave pml_width = [top, bottom, left, right]
-## Number of absorbing boundary points
-
-PML_WIDTH = [0, 50, 50, 50]
-
-## -------
-## SOURCES
-
-## Total number of independent seismic shots to simulate
-N_SHOTS = 9
-
-## Number of sources activated simultaneously per shot.
-N_SHOTS_PER_SHOT = 1
-
-## Horizontal spacing between consecutive shot locations in grid points.
-D_SOURCE = 100 
-
-## Horizontal grid index for the first source location.
-FIRST_SOURCE = 100
-
-## Vertical grid index for the source (0 for surface).
-SOURCE_DEPTH = 0
-
-## ---------
-## RECEIVERS
-
-## Total number of active receivers per shot.
-N_RECEIVERS_PER_SHOT = 48
-
-## Horizontal spacing between adjacent receivers in grid points.
-D_RECEIVERS = 2 
-
-## Horizontal grid index for the first receiver (sets the initial offset).
-FIRST_RECEIVERS = 200
-
-## Vertical grid index for the receiver array (0 for surface).
-RECEIVERS_DEPTH = 0
-
-## -------
-## WAVELET  
-
-## Central frequency of the Ricker source wavelet in Hertz.
-FREQ = 100
-
-## Total number of discrete time steps to simulate and record.
-NT = 30000
-
-## Time step duration in seconds, set to satisfy the CFL stability condition.
-DT = 0.00001
-
-## The finite difference order of accuracy. Possible values are 2 and 8. [default=8].
-ACCURACY = 8
-
-## -------------------
-## DISPERSION ANALYSIS  
-
-# Minimum frequency threshold [Hz]. Frequencies below this are discarded to 
-# prevent picking low-frequency noise artifacts.
-MIN_FREQ = 50
-
-# Standard deviation for the Gaussian filter used to smooth the image. 
-# Default is 1.0.
-SIGMA = 1
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 
 #=====
 [gene]
 #=====
 
-<<<<<<< HEAD
-=======
-## =================================================================================================================
-## This parameters generates a list of random layer thicknesses that sum exactly to a specified total (`MAX_TOTAL`). 
-## Each layer thickness is randomly drawn from a uniform distribution between `MIN_THICK_LAYER` and `MAX_THICK_LAYER`, 
-## ensuring that all layers meet the minimum thickness requirement (`MIN_THICK_LAYER`). 
-## The final layer is adjusted so that the total thickness precisely matches `MAX_TOTAL`.
-
-## ----------------------------------------
-## Minimum thickness of an individual layer (m).
-MIN_THICK_LAYER = 0.3
-
-## ----------------------------------------
-## Maximum thickness of an individual layer  (m)
-MAX_THICK_LAYER = 0.7
-
-## -----------------------------
-## Number of layers of the model
-## 2–4 layers maximum
-MAX_LAYERS = 5
-
-## ==================================================================================
-## Default parameters to generate a random velocity model with layer thicknesses (m), 
-## vp/vs ratio, and Vs values (m/s).
-
-## Source:
-## Keceli, A. Soil parameters which can be determined with seismic velocities. Jeofizik 16, 17–29 (2012).
-
-## Soil and rock type                    VP                  VS                   (Vp/Vs)
-## ------------------------------------------------------------------------------------------
-## Hard and massif                     6000-4200          4000-2700               1.45 – 1.5
-## Very stiff                          4200-3000          2700-1500               1.5 – 2
-## Stiff                               3000-2000          1500-700                2 – 3
-## Moderate stiff but altered          2000-1500          700-400                 3 – 4
-## Loose and soft                      1500-600           400-100                 4 – 6
-## Soft and saturated                  >1300              >100                    5 – 8
-
-## ---------------------------------------
-## First layer bounds for Vs values (m/s).
-LOW_VELS = [50,600]
-
-## --------------------------------------
-## Last layer bounds for Vs values (m/s).
-UP_VELS = [700,1200]
-
-## Vp/Vs ratio:
-## Uniform values for each layer between the following bounds:
-
-## ---------------
-## First layer bound for Vp/Vs values.
-FL_VPVS = 5
-
-## ---------------
-## Last layer bound for Vp/Vs values.
-LL_VPVS = 2
-￼
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
 ## ==========================================
 ## Default parameters to the inversion scheme
 
@@ -347,8 +122,4 @@ N_INV = 2
 
 ## ---------------
 ## MULTIPROCESSING
-<<<<<<< HEAD
 NUM_PROCESS = 10
-=======
-NUM_PROCESS = 10
->>>>>>> 028cf37d1dc8a459a17f99af11a917a3fc5fb03d
