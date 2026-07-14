@@ -3,10 +3,10 @@
          Module that parses global parameters from a configuration file
 --------------------------------------------------------------------------------
 
-Author: Diogo L.O.C. (diogoloc@on.br)
+Author: Diogo L.O.C. (locdiogo@gmail.com)
 
 
-Last Date: 06/2025
+Last Date: 07/2026
 
 Description:
 Module that parses global parameters from a configuration file at first import,
@@ -27,7 +27,7 @@ of named values.
 import configparser
 import os
 import glob
-
+import ast
 
 def select_and_parse_config_file(basedir='.', ext='cnf', verbose=True):
     """
@@ -38,7 +38,6 @@ def select_and_parse_config_file(basedir='.', ext='cnf', verbose=True):
     @rtype: L{ConfigParser.ConfigParser}
     """
     config_files = glob.glob(os.path.join(basedir, u'*.{}'.format(ext)))
-
 
     if not config_files:
         raise Exception("No configuration file found!")
@@ -67,60 +66,48 @@ def select_and_parse_config_file(basedir='.', ext='cnf', verbose=True):
 
 config = select_and_parse_config_file(basedir='.', ext='cnf', verbose=True)
 
-# -----
-# paths
-# -----
 
-## ------------------------
-## Directory with waveforms (SeisComP Data Structure)
+# ---------------------------------------------------------------------
+# [paths]
+# ---------------------------------------------------------------------
 
-WAVEFORM_DIR = config.get('paths', 'WAVEFORM_DIR')
+FOLDER_NAME = config.get("paths", "FOLDER_NAME")
+FOLDER_OUTPUT = config.get("paths", "FOLDER_OUTPUT")
+OBSERVED_DATA = config.get("paths", "OBSERVED_DATA")
+ 
+# ---------------------------------------------------------------------
+# [clima]
+# ---------------------------------------------------------------------
 
-## ---------------------------
-## Directory with the catalog (.CSV file of the National Earthquake Information Center (NEIC))
+MODEL_VP0 = config.get("clima", "MODEL_VP0")
+MODEL_RHO0 = config.get("clima", "MODEL_RHO0")
+MODEL_EOFS = config.get("clima", "MODEL_EOFS")
+MODEL_COEF_HIST = config.get("clima", "MODEL_COEF_HIST")
+MES_ALVO = config.get("clima", "MES_ALVO")
+N_EOFS = config.getint("clima", "N_EOFS")
+ 
+# ---------------------------------------------------------------------
+# [sismica]
+# ---------------------------------------------------------------------
 
-CATALOG_FILE = config.get('paths', 'CATALOG_FILE')
+DT = config.getfloat("sismica", "DT")
+Z_MAX = config.getfloat("sismica", "Z_MAX")
+DZ = config.getfloat("sismica", "DZ")
+F_PICO = config.getfloat("sismica", "F_PICO")
+WAVELET_TYPE = config.get("sismica", "WAVELET_TYPE")
+WAVELET_LENGTH = config.getfloat("sismica", "WAVELET_LENGTH")
+ 
+# ---------------------------------------------------------------------
+# [gene]
+# ---------------------------------------------------------------------
 
-## ----------------------------
-## Directory of the StationXML:
-
-XML_DIR = config.get('paths', 'XML_DIR')
-
-## -----------------------
-## Directory of the output (Figures and Feathers file)
-
-SSPARQ_OUTPUT = config.get('paths', 'SSPARQ_OUTPUT')
-
-# ------
-# event
-# ------
-
-## -------------------------------------------------------------------
-## Taup_time model to calculate travel times
-TAUPY_MODEL = config.get('event', 'TAUPY_MODEL')
-
-## -------------------------------------------------------------------
-## Apply band-pass filtering to the seismograms using the range above:
-
-PERIOD_BANDS_MAX = config.getfloat('event', 'PERIOD_BANDS_MAX')
-
-PERIOD_BANDS_MIN = config.getfloat('event', 'PERIOD_BANDS_MIN')
-
-## ===================================================================================
-## Default parameters to define the signal and noise windows used to estimate the SNR:
-
-## ------------------------------------------------------------------------------
-## Duration of the signal window before and after the P-wave arrival (in seconds)
-
-TIME_WINDOW = config.getfloat('event', 'TIME_WINDOW')
-
-## ---------------------------------------------------------------
-## P-wave time window for events (in seconds after P-wave arrival)
-
-TIME_FINAL_P = config.getfloat('event', 'TIME_FINAL_P')
-
-## ---------------
-## MULTIPROCESSING
-
-num_processes = config.getint('event', 'num_processes')
-
+MUTPB = config.getfloat("gene", "MUTPB")
+CXPB = config.getfloat("gene", "CXPB")
+TOURNSIZE = config.getint("gene", "TOURNSIZE")
+HOF_NUM = config.getint("gene", "HOF_NUM")
+NGEN = config.getint("gene", "NGEN")
+POPULATION = config.getint("gene", "POPULATION")
+N_INV = config.getint("gene", "N_INV")
+NUM_PROCESS = config.getint("gene", "NUM_PROCESS")
+MARGEM_COEF = config.getfloat("gene", "MARGEM_COEF")
+ETA_GENE = config.getfloat("gene", "ETA_GENE")
