@@ -116,11 +116,11 @@ F_PEAK = 30.0
 ## ------------------------------------------------------------
 ## Set to TRUE to add Gaussian white noise to the observed data.
 ## Typically used for synthetic data inversion testing.
-ADD_NOISE = FALSE
+ADD_NOISE = False
 
 ## ----------------------------------------------------------
 ## Percentage of noise relative to the signal's RMS amplitude
-PERCENTAGE_NOISE = 5
+PERCENTAGE_NOISE = 25
 
 #=====
 [gene]
@@ -134,8 +134,8 @@ PERCENTAGE_NOISE = 5
 SEED = 24
 
 ## ----------------------------------
-## Probability of mutating each value (default=0.3 [30%])
-MUTPB = 0.3
+## Probability of mutating each value (default=0.03 [3%])
+MUTPB = 0.03
 
 ## ---------------------------------------
 ## The probability of performing crossover (default=0.7 [70%])
@@ -151,7 +151,7 @@ HOF_NUM = 100
 
 ## ---------------------
 ## Number of generations:
-NGEN = 200
+NGEN = 100
 
 ## ---------------
 ## Number of individuals in population:
@@ -159,7 +159,7 @@ POPULATION = 1000
 
 ## --------------------
 ## Number of inversions:
-N_INV = 2
+N_INV = 10
 
 ## ---------------
 ## MULTIPROCESSING

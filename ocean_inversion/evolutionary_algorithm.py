@@ -181,3 +181,54 @@ def statistics_save(individual):
     """
     
     return individual.fitness.values
+
+# ----------------------------------------------------------------------------------------------
+import numpy as np
+
+
+def bootstrap_hof_uncertainty(hof_ssp, rng, n_iterations=1000, ci_percentiles=[2.5, 97.5]):
+    """
+    Perform bootstrap uncertainty analysis on a pooled set of Hall of Fame
+    (HOF) solutions from multiple independent inversion runs (repetitions
+    of the same problem).
+
+    Parameters
+    ----------
+    hof_ssp : list of array-like
+        Pooled HOF solution profiles from all inversion runs. Each element
+        is a 1D array-like of length n_depth; all elements must share the
+        same length.
+    rng : np.random.Generator
+        Random number generator (e.g. np.random.default_rng(seed)).
+    n_iterations : int, optional
+        Number of bootstrap resamples (default: 1000).
+    ci_percentiles : list, optional
+        Percentiles for the confidence interval (default: [2.5, 97.5], 95% CI).
+
+    Returns
+    -------
+    dict
+        Bootstrap statistics (mean, std, CI) per depth, computed over the
+        pooled set of HOF solutions.
+    """
+    # Stack the list of 1D profiles into a proper 2D array (n_hof, n_depth).
+    # np.stack raises a clear error if the profiles don't share the same
+    # length, instead of silently producing an object array.
+    hof_ssp = np.stack([np.asarray(sol, dtype=float) for sol in hof_ssp])
+
+    n_hof = hof_ssp.shape[0]
+
+    boot_means = np.empty((n_iterations, hof_ssp.shape[1]))
+    for i in range(n_iterations):
+        idx = rng.integers(0, n_hof, size=n_hof)
+        boot_means[i] = hof_ssp[idx].mean(axis=0)
+
+    lower_ssp, upper_ssp = np.percentile(boot_means, ci_percentiles, axis=0)
+
+    return {
+        'mean_ssp': [boot_means.mean(axis=0)],
+        'std_ssp': [boot_means.std(axis=0)],
+        'ci_lower_ssp': [lower_ssp],
+        'ci_upper_ssp': [upper_ssp],
+        'bootstrap_distribution_ssp': [boot_means],
+    }
