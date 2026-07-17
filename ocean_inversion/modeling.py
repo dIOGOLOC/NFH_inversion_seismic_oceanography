@@ -1,812 +1,561 @@
-# Functions 
-
-## modeling 
-
 import numpy as np
-import xarray as xr
-from scipy.ndimage import gaussian_filter1d
-import torch
+from scipy.signal import butter, filtfilt
+from scipy.signal import windows
 
-import deepwave
-from deepwave import elastic
-import deepwave.common as dwc
+# ---------------------------------------------------------------------
+# 1. FORWARD MODELING HELPER FUNCTIONS
+# ---------------------------------------------------------------------
 
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import numpy as np
-
-
-from parameters_py.config import (
-					FL_VPVS,LL_VPVS)
-
-def calculate_parameters_from_vs(vel_s,vp_vs):
-    
-    '''
-    Function to estimate the P velocities and Densities in function of initial Shear wave velocity and Vp/Vs ratio
-    
-    == Empirical Relations between Elastic Wavespeeds and Density == 
-    
-    Thomas M. Brocher; Empirical Relations between Elastic Wavespeeds and Density in the Earth's Crust. 
-    Bulletin of the Seismological Society of America 2005;; 95 (6): 2081–2092. doi: https://doi.org/10.1785/0120050077
-    
-    The purpose of this paper is present empirical relations among Vp, Vs, and rho, that can be used to infer Vs for
-    the entire Earth’s crust from either Vp or rho. Vp/Vs is dependent on many factors, including fluid content and 
-    bulk chemical composition, and there is no direct relation between it and Vp.
-    
-    Brocher (2005) presented a series of empirical relationships between velocity and density:
-
-    - rho = 1.6612*Vp - 0.4721*Vp**2 + 0.0671*Vp**3 - 0.0043*Vp**4 + 0.000106*Vp**5
-
-    - here rho is in g/cm³, and Vp is in km/s (Nafe–Drake equation).    
-
-    == Vp/Vs ratio == 
-
-    Vp/Vs velocity ratio is a strong function of:
-    - water saturation, 
-    - porosity, 
-    - crack intensity, and
-    - clay content. 
-    
-    Recently, it became important factor to study underground properties. 
-    Vp/Vs velocity ratio has the variation interval as 1.45 to 8 and 
-    it have been used as a lithological indicators in studies of soil amplification 
-    and soil classification, acquifers and hydrocarbon reservoirs.
-
-    
-    Parameters:
-    ----------
-    - vs – Velocities in m/s.    
-    - vp/vs – Ratio between Shear and Compressional wave velocity.    
-    
-    Returns
-    -------
-    Array corresponding to P-wave velocity and density:
-        - vp velocities (in m/s) 
-        - density (in g/cm³)  
-    ''' 
-    
-    vp = (vel_s*vp_vs)/1000
-
-    rho = 1.6612*vp - 0.4721*vp**2 + 0.0671*vp**3 - 0.0043*vp**4 + 0.000106*vp**5
-
-    return vp*1000,rho
-
-# -----------------------------------------------------------------------------------------------------
-
-def create_velocity_model_from_profile_vs(model_profile,FL_boundvpvs=FL_VPVS,LL_boundvpvs=LL_VPVS):
+def add_white_noise(trace, noise_percent):
     """
-    Constructs a 1D seismic velocity model from a profile of layer thicknesses, 
-    shear-wave velocities (vs), and ratio between Shear and Compressional wave 
-    velocity (vpvs) .
-
-    This function calculates P-wave velocity (vp) and density from the provided 
-    vs and vpvs values. It also converts the input units (m, m/s) 
-    to standard modeling units (km, km/s). The final layer is treated as 
-    an infinite half-space with a thickness of 0.
+    Add Gaussian white noise to a seismic trace based on a percentage of the
+    signal's RMS amplitude.
 
     Parameters
     ----------
-    model_profile : tuple or list of array-like
-        A sequence containing three arrays/lists: 
-        - [0]: Layer thicknesses (in m).
-        - [1]: Layer S-wave velocities (vs) (in m/s).
+    trace : np.ndarray
+        Input seismic trace (1D or 2D array).
+    noise_percent : float
+        Percentage of noise relative to the signal's RMS amplitude
+        (e.g., 1, 2, 5, 10 for 1%, 2%, 5%, 10% noise).
 
     Returns
     -------
-    velocity_model : numpy.ndarray
-        A 2D array of shape (N, 4) representing the 1-D velocity model. 
-        Each row corresponds to a layer with the following columns:
-        [thickness, velocity_p, velocity_s, density]
-            - Layer thickness (in km).
-            - Layer P-wave velocity (in km/s).
-            - Layer S-wave velocity (in km/s).
-            - Layer density (in g/cm³).
+    np.ndarray
+        Noisy trace (same shape as input).
     """
-    
-    # Initialize an empty list to store the parameters for each layer
-    vmodel = []
+    # 1. Compute the RMS amplitude of the signal
+    signal_rms = np.sqrt(np.mean(trace**2))
 
-    # Initialize Vp/Vs ratio for each layer
-    vpvs = np.linspace(start=FL_boundvpvs, stop=LL_boundvpvs, num=len(model_profile))
+    # 2. Convert percentage to noise standard deviation
+    noise_std = (noise_percent / 100.0) * signal_rms
 
-    # Unpack and iterate through the thicknesses, and vs values simultaneously.
-    for i, (thickness, vs) in enumerate(model_profile):
- 
-        # Calculate P-wave velocity and density using an external helper function
-        vp, dens = calculate_parameters_from_vs(vs,vpvs[i])
-        
-        # Check if the current layer is NOT the last layer in the profile
-        if not i == len(model_profile) - 1:
-            # Append standard layer: convert units from (m, m/s, m/s, g/m³) to (km, km/s, km/s, g/cm³)
-            # by dividing all values by 1000
-            vmodel.append([thickness / 1000, vp / 1000, vs / 1000, dens])
-        else: 
-            # Append final layer (half-space): set thickness to 0.
-            # Convert vp, vs, and density units as done for the previous layers.
-            vmodel.append([0.0, vp / 1000, vs / 1000, dens])
+    # 3. Generate Gaussian white noise with that standard deviation
+    noise = np.random.normal(0, noise_std, trace.shape)
 
-    # Convert the resulting list of layer parameters into a NumPy array
-    velocity_model = np.array(vmodel)    
+    return trace + noise
 
-    return velocity_model
+# ---------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------------------------------
 
-def create_seismic_model(depth_ranges,vs_ranges,vpvs_ranges,num_layers,max_total,DX,DZ,NX,NZ,basement_vs,basement_vpvs,seed):
+def geometric_spreading_correction(trace, dt, mode="cylindrical", t_ref=None):
     """
-    Generates a 2D synthetic seismic velocity model with discrete, blocky lateral 
-    variations in layer depth. 
+    Compensates for geometric-spreading attenuation in the observed trace,
+    bringing its amplitude envelope to the same "no-spreading" regime
+    assumed by the 1D convolutional model (which has no geometric
+    decay built in).
 
-    The model consists of horizontal segments where the depth of interfaces remains 
-    constant within a segment but jumps abruptly at segment boundaries. The physical 
-    properties (Vs, Vp, density) vary vertically by layer but remain constant 
-    laterally within each layer.
+    mode="cylindrical" (2D, gain ~ sqrt(t)): use if Deepwave's scalar()
+        was run with v as a 2D grid (most common case).
+    mode="spherical" (3D, gain ~ t): use if v was modeled in 3D.
 
     Parameters
     ----------
-    depth_ranges : list of tuple of float
-        Min and max depth boundaries for each layer interface [(min, max), ...].
-    vs_ranges : list of tuple of float
-        Min and max S-wave velocities (m/s) for each layer.
-    vpvs_ranges : list of tuple of float
-        Min and max Vp/Vs ratios for each layer.
-    num_layers : int
-        Number of geological layers above the basement.
-    max_total : float
-        Maximum allowable depth (m) for any interface.
-    DX : float
-        Grid spacing in the horizontal (X) direction (m).
-    DZ : float
-        Grid spacing in the vertical (Z) direction (m).
-    NX : int
-        Number of grid points in the horizontal direction.
-    NZ : int
-        Number of grid points in the vertical direction.
-    basement_vs : float
-        S-wave velocity (m/s) of the basement rock.
-    basement_vpvs : float
-        Vp/Vs ratio of the basement rock.
-    seed : int
-        Seed for the random number generator to ensure reproducibility.
+    trace : ndarray
+        Observed trace (already muted, with direct arrival removed).
+    dt : float
+        Time sampling interval (s).
+    mode : str
+        "cylindrical" (2D) or "spherical" (3D).
+    t_ref : float, optional
+        Reference time (s) used to avoid an exploding gain near t=0
+        (where t->0 would make the gain diverge). Default: 1 sample.
 
     Returns
     -------
-    ds : xarray.Dataset
-        A dataset containing the 2D grids ('z', 'x') for Vp, Vs, Vp/Vs ratio, 
-        density, and formation indices, along with spatial coordinates and attributes.
+    corrected_trace : ndarray (float32)
     """
 
-    # ---------------------------------------------------------
-    # 1. Initialization and Grid Setup
-    # ---------------------------------------------------------
-    
-    # Initialize the random number generator for reproducible results
-    rng = np.random.default_rng(seed)
+    nt = len(trace)
+    t = np.arange(nt) * dt
+    t_ref = t_ref if t_ref is not None else dt
+    t_safe = np.maximum(t, t_ref)
+    exponent = 0.5 if mode == "cylindrical" else 1.0
+    gain = (t_safe / t_ref) ** exponent
 
-    # Create spatial coordinate vectors based on grid spacing and size
-    z_vector = np.linspace(0, NZ * DZ, NZ)
-    x_vector = np.linspace(0, NX * DX, NX)
+    return (trace * gain).astype(np.float32)
 
-    # ---------------------------------------------------------
-    # 2. Interface (Topography) Generation
-    # ---------------------------------------------------------
-    
-    # Initialize the interfaces array: shape (num_layers, NX).
-    # This stores the depth of the bottom of each layer across all columns.
-    interfaces = np.zeros((num_layers, NX))
+# ---------------------------------------------------------------------
 
-    # Define the number of discrete lateral segments (e.g., 4 for quarters)
-    num_segments = 10
-
-    # Split the column indices into the specified number of segments.
-    # np.array_split ensures all columns are covered even if NX isn't perfectly divisible.
-    segment_indices = np.array_split(np.arange(NX), num_segments)
-
-    for l in range(num_layers):
-        for segment_cols in segment_indices:
-            # Generate ONE random depth for this specific horizontal segment
-            segment_depth = rng.uniform(*depth_ranges[l])
-            
-            # Apply that uniform depth to all columns within the current segment
-            interfaces[l, segment_cols] = segment_depth
-            
-        # Prevent non-physical layer crossings: 
-        # A layer's bottom must be strictly deeper than the layer above it.
-        if l > 0:
-            interfaces[l] = np.maximum(interfaces[l], interfaces[l - 1] + 0.01)
-            
-        # Ensure no interface exceeds the predefined maximum model depth
-        interfaces[l] = np.clip(interfaces[l], 0, max_total)
-    
-    # ---------------------------------------------------------
-    # 3. Layer Property Generation
-    # ---------------------------------------------------------
-    
-    # Generate constant physical properties for each layer (no lateral variation)
-    vs_layer   = np.array([round(rng.uniform(*vs_ranges[l])) for l in range(num_layers)])
-    vpvs_layer = np.array([round(rng.uniform(*vpvs_ranges[l]), 2) for l in range(num_layers)])
-    
-    # Derive Vp and Density from Vs and Vp/Vs using the external function
-    vp_layer, density_layer = calculate_parameters_from_vs(vs_layer, vpvs_layer)
-
-    # Calculate basement parameters
-    basement_vp, basement_density = calculate_parameters_from_vs(
-        np.array([basement_vs]), np.array([basement_vpvs])
-    )
-    
-    # ---------------------------------------------------------
-    # 4. 2D Grid Population
-    # ---------------------------------------------------------
-    
-    # Initialize 2D arrays with basement values as the default background
-    vs_grid        = np.full((NZ, NX), basement_vs)
-    vp_grid        = np.full((NZ, NX), basement_vp[0])
-    vpvs_grid      = np.full((NZ, NX), basement_vpvs)
-    density_grid   = np.full((NZ, NX), basement_density[0])
-    formation_grid = np.zeros((NZ, NX), dtype=int) # 0 = basement, 1..N = layers
-
-    # Iterate through every column (X) and every depth point (Z) to assign values
-    for ix in range(NX):
-        for iz, z in enumerate(z_vector):
-            
-            # Optimization: If current Z is deeper than the last interface, 
-            # we are in the basement. Since arrays were initialized with 
-            # basement values, we can break early to save computation time.
-            if z >= interfaces[-1, ix]:      
-                break                        
-            
-            # Determine which layer the current (Z, X) point falls into
-            for l in range(num_layers):
-                top    = interfaces[l - 1, ix] if l > 0 else 0.0
-                bottom = interfaces[l, ix]
-                
-                if top <= z < bottom:
-                    # Assign the corresponding layer properties
-                    vs_grid[iz, ix]        = vs_layer[l]
-                    vp_grid[iz, ix]        = vp_layer[l]
-                    vpvs_grid[iz, ix]      = vpvs_layer[l]
-                    density_grid[iz, ix]   = density_layer[l]
-                    formation_grid[iz, ix] = l + 1
-                    break # Move to the next depth point once assigned
-
-    # ---------------------------------------------------------
-    # 5. Data Packaging
-    # ---------------------------------------------------------
-    
-    # Define dimensions and coordinates for the xarray dataset
-    dims   = ("z", "x")
-    coords = {
-        "distance": ("x", x_vector, {"units": "m", "long_name": "distance"}),
-        "depth": ("z", z_vector, {"units": "m", "long_name": "depth"})
-    }
-
-    # Pack the numpy grids into an xarray.Dataset with rich metadata
-    ds = xr.Dataset(
-        {
-            "vp":        xr.DataArray(vp_grid,        dims=dims, coords=coords,
-                                      attrs={"units": "m/s",   "long_name": "P-wave velocity"}),
-            "vs":        xr.DataArray(vs_grid,        dims=dims, coords=coords,
-                                      attrs={"units": "m/s",   "long_name": "S-wave velocity"}),
-            "vpvs":      xr.DataArray(vpvs_grid,      dims=dims, coords=coords,
-                                      attrs={"units": "-",     "long_name": "Vp/Vs ratio"}),
-            "density":   xr.DataArray(density_grid,   dims=dims, coords=coords,
-                                      attrs={"units": "g/cm³", "long_name": "Bulk density"}),
-            "formation": xr.DataArray(formation_grid, dims=dims, coords=coords,
-                                      attrs={"long_name": "Formation index (0=basement, 1..N=soil)"}),
-        },
-        attrs={
-            "DX": DX, 
-            "DZ": DZ,
-            "NX": NX, 
-            "NZ": NZ,
-            "num_layers":             num_layers,
-            "vs_per_layer_m_s":       vs_layer.tolist(),
-            "vp_per_layer_m_s":       vp_layer.tolist(),
-            "density_per_layer_gcm3": density_layer.tolist(),
-            "basement_vp_m_s":        basement_vp,
-            "basement_vs_m_s":        basement_vs,
-            "basement_vpvs":          basement_vpvs,
-            "basement_density_g_cm3": basement_density,
-        },
-    )
-    
-    return ds
-
-# -----------------------------------------------------------------------------------------------------
-
-def create_acquisition_geometry(n_shots,n_receivers_per_shot,d_source,d_receivers,first_source,first_receiver,source_depth,receiver_depth,n_shots_per_shot,device,plot_profile,data_to_plot,figures_path):
-        
+def bandpass_filter(trace, dt, f_peak, low_frac=0.3, high_frac=1.0, order=4):
     """
-    Creates the source and receiver location tensors for Deepwave forward modeling,
-    simulating a roll-along acquisition geometry where the receiver array moves 
-    with each shot.
+    Applies a zero-phase Butterworth band-pass filter to remove
+    low-frequency drift and high-frequency numerical noise that the
+    1D convolutional model (with a single Ricker wavelet) cannot
+    physically explain.
+
+    The passband is defined relative to the wavelet's peak frequency,
+    since that is the only frequency content the forward model can
+    reproduce -- energy well outside that band is necessarily noise
+    or trend, not usable reflectivity information.
 
     Parameters
     ----------
-    n_shots : int
-        Total number of independent seismic shots.
-    n_receivers_per_shot : int
-        Number of active receivers recording each shot.
-    d_source : int
-        Horizontal spacing between consecutive shot locations (in grid points).
-    d_receivers : int
-        Horizontal spacing between adjacent receivers (in grid points).
-    first_source : int
-        Horizontal grid index for the first source location.
-    first_receiver : int
-        Horizontal grid index for the first receiver (relative to the first shot).
-    source_depth : int
-        Vertical grid index for the sources (default is 0 for surface).
-    receiver_depth : int
-        Vertical grid index for the receivers (default is 0 for surface).
-    n_shots_per_shot : int
-        Number of sources activated simultaneously per shot (default is 1).
-    device : torch.device
-        The PyTorch device to allocate the tensors on.
-    plot_profile : Boolean    
-        To plot the seismic profile.
-    data_to_plot : xarray
-        XARRAY with the 2D soil model.
-    figures_path : str
-        Directory for saving figures.
+    trace : ndarray
+        Input trace (1D).
+    dt : float
+        Time sampling interval (s).
+    f_peak : float
+        Wavelet peak frequency (Hz), used as the reference for the
+        passband limits.
+    low_frac, high_frac : float
+        Passband limits as a fraction of f_peak (default: 0.3x-3x f_peak).
+    order : int
+        Butterworth filter order.
 
     Returns
     -------
-    source_locations : torch.Tensor
-        Tensor of shape (n_shots, n_shots_per_shot, 2) containing source [z, x] indices.
-    receiver_locations : torch.Tensor
-        Tensor of shape (n_shots, n_receivers_per_shot, 2) containing receiver [z, x] indices.
+    filtered_trace : ndarray (float32)
     """
+    fs = 1.0 / dt
+    nyq = fs / 2.0
 
-    # =========================
-    # Source locations
-    # =========================
+    low = (f_peak * low_frac) / nyq
+    high = min((f_peak * high_frac) / nyq, 0.99)
 
-    source_locations = torch.zeros(
-        n_shots,
-        n_shots_per_shot,
-        2,
-        dtype=torch.long,
-        device=device
-    )
+    b, a = butter(order, [low, high], btype="band")
+    filtered = filtfilt(b, a, trace)
 
-    # Set z-coordinates (depth)
-    source_locations[..., 0] = source_depth
+    return filtered.astype(np.float32)
 
-    # Set x-coordinates
-    source_locations[:, 0, 1] = (
-        torch.arange(n_shots, device=device) * d_source
-        + first_source
-    )
+# ---------------------------------------------------------------------
 
-    # =========================
-    # Receiver locations
-    # =========================
-    receiver_locations = torch.zeros(
-        n_shots,
-        n_receivers_per_shot,
-        2,
-        dtype=torch.long,
-        device=device
-    )
-
-    # Set z-coordinates (depth)
-    receiver_locations[..., 0] = receiver_depth
-
-    # 1. Base line of receivers for the FIRST shot
-    base_receivers = (
-        torch.arange(n_receivers_per_shot, device=device) 
-        * d_receivers 
-        + first_receiver
-    )
-
-    # 2. Offset applied to the receiver array for subsequent shots
-    # Shape transformed to (n_shots, 1) for correct broadcasting
-    shot_offsets = (torch.arange(n_shots, device=device) * d_source).unsqueeze(1)
-
-    # 3. Add the base geometry to the offsets
-    receiver_locations[:, :, 1] = base_receivers + shot_offsets
-
-    if plot_profile:
-
-        fig, ax = plt.subplots(1, 1, figsize=(20, 5))
-
-        # -----
-        # Model
-        # -----
-
-        im = ax.imshow(
-            data_to_plot.density.data,
-            cmap='viridis',
-            extent=[0, data_to_plot.attrs['NX'] * data_to_plot.attrs['DX'], -data_to_plot.attrs['NZ'] * data_to_plot.attrs['DZ'], 0],
-            vmin=data_to_plot.density.data.min(),
-            vmax=data_to_plot.density.data.max(),
-            aspect="auto",
-            origin='upper'
-        )
-
-        # -------
-        # Sources
-        # -------
-
-        src_x = source_locations[:, 0, 1].cpu().numpy() * data_to_plot.attrs['DX']
-        src_z = source_locations[:, 0, 0].cpu().numpy() * data_to_plot.attrs['DZ']
-
-        # ---------
-        # Receivers
-        # ---------
-
-        rec_x = receiver_locations[:, :, 1].cpu().numpy() * data_to_plot.attrs['DX']
-        rec_z = receiver_locations[:, :, 0].cpu().numpy() * data_to_plot.attrs['DZ']
-
-        # ====
-        # Plot
-        # ====
-
-        # Sources
-        ax.scatter(
-            src_x,
-            -src_z,
-            c='red',
-            marker='*',
-            s=200,
-            edgecolors='k',
-            label='Sources',
-            zorder=1
-        )
-
-        # Receivers
-        ax.scatter(
-            rec_x,
-            -rec_z,
-            c='k',
-            marker='v',
-            s=50,
-            label='Receivers',
-            zorder=-10
-        )
-
-        ax.hlines(y=0,xmin=0,xmax=data_to_plot.attrs['NX'] * data_to_plot.attrs['DX'],colors='k',lw=2,ls='-',alpha=1)
-
-        # labels
-        ax.set_xlabel('Distance (m)')
-        ax.set_ylabel('Depth (m)')
-
-        # grid
-        ax.grid(which='major', color='gray', linestyle='-', linewidth=0.5)
-        ax.grid(which='minor', color='gray', linestyle=':', linewidth=0.5, alpha=0.5)
-
-        ax.xaxis.set_ticks_position('both')
-        ax.yaxis.set_ticks_position('both')
-
-        ax.tick_params(
-            which='both',
-            direction='in',
-            top=True,
-            right=True
-        )
-
-        ax.set_xlim(0, data_to_plot.attrs['NX'] * data_to_plot.attrs['DX'])
-        ax.set_ylim(-(data_to_plot.attrs['NZ'] * data_to_plot.attrs['DZ']), 0.15)
-
-        # legend
-        ax.legend()
-
-        # colorbar
-        plt.colorbar(
-            im,
-            ax=ax,
-            fraction=0.15,
-            shrink=0.5,
-            label='Density (kg/cm³)'
-        )
-
-        fig.savefig(figures_path + 'model_slice_and_receptors.png')
-
-    return source_locations, receiver_locations
-
-# -----------------------------------------------------------------------------------------------------
-
-def create_source_amplitudes(freq,nt,dt,n_shots,n_shots_per_shot,device,plot_wavelet,figures_path):
+def apply_edge_taper(trace, taper_samples=200):
+    """
+    Applies a smooth decay (half of a Hanning window) to the last samples
+    of the trace to avoid numerical edge artifacts.
+    """
+    # np.squeeze ensures the trace is (N,) instead of (N, 1)
+    trace_tapered = np.copy(np.squeeze(trace))
     
+    # Create the descending half of a Hanning window
+    taper = windows.hann(taper_samples * 2)[taper_samples:]
+    
+    # Multiply the end of the trace by the taper (forcing it to zero)
+    trace_tapered[-taper_samples:] *= taper
+    
+    return trace_tapered
+# ---------------------------------------------------------------------
+
+def estimate_wavelet_duration(f_peak, n_cycles=3.0):
     """
-    Generates a Ricker wavelet and formats the source amplitudes tensor 
-    required for Deepwave forward modeling.
+    Estimate a physically motivated total duration for a Ricker wavelet,
+    based on its peak frequency, instead of an arbitrary fixed value.
+
+    A Ricker wavelet's energy is concentrated within a few periods of its
+    peak frequency: lower frequencies require a proportionally longer
+    time window to avoid truncation (which introduces spectral leakage
+    when the wavelet is convolved with the reflectivity series), while
+    higher frequencies need a shorter one. Tying the duration to 1/f_peak
+    keeps the wavelet support consistent regardless of what frequency is
+    chosen, without requiring a separate user-defined length parameter.
 
     Parameters
     ----------
+    f_peak : float
+        Peak (dominant) frequency of the wavelet (Hz).
+    n_cycles : float
+        Number of periods (1/f_peak) to include in the total duration.
+        3.0 is a common practical choice: it captures the main lobe and
+        the first side lobes, where the amplitude has already decayed to
+        a small fraction of the peak.
+
+    Returns
+    -------
+    length : float
+        Total wavelet duration (s).
+    """
+    return n_cycles / f_peak
+
+# ---------------------------------------------------------------------
+
+def ricker_wavelet(f_peak, dt):
+    """
+    Generate a Ricker wavelet (second derivative of a Gaussian).
+
+    Parametrization follows the convention used by Deepwave
+    (deepwave.wavelets.ricker): the wavelet is defined by an explicit
+    number of samples and an explicit peak time, rather than by a
+    symmetric time window built with a floating-point step. This avoids
+    off-by-one sample counts caused by floating-point rounding in
+    np.arange, and it gives explicit control over where the peak sits,
+    which matters for phase alignment when the wavelet is later
+    convolved with the reflectivity series.
+
+    Parameters
+    ----------
+    f_peak : float
+        Peak (dominant) frequency of the wavelet (Hz).
+    dt : float
+        Sampling interval (s).
+    
+    Returns
+    -------
+    wavelet : ndarray
+        Ricker wavelet sampled at dt, with `n_samples` samples.
+    """
+
+    length = estimate_wavelet_duration(f_peak)
+    n_samples = int(round(length / dt)) + 1
+    peak_time = (n_samples - 1) * dt / 2.0
+
+    t = np.arange(n_samples) * dt - peak_time
+    pi2_f2_t2 = (np.pi * f_peak * t) ** 2
+    wavelet = (1.0 - 2.0 * pi2_f2_t2) * np.exp(-pi2_f2_t2)
+
+    return wavelet
+
+# ---------------------------------------------------------------------
+
+def mute_direct_arrival(
+    trace,
+    offset,
+    dt,
+    freq,
+    peak_time=0.0,
+    velocity=1500.0,
+    flat_len=300,
+    taper_len=100,
+):
+    """
+    Applies a cosine-tapered mute to the direct arrival of a 1D seismic trace.
+
+    The direct-arrival time is estimated with a linear moveout:
+        t_arrival = peak_time + |offset| / velocity
+
+    A flat (fully zeroed) window is applied around this arrival time,
+    surrounded by a smooth cosine taper that transitions the mask
+    from 0 back to 1.
+
+    Parameters
+    ----------
+    trace : np.ndarray
+        1D seismic trace, shape (nt,)
+    offset : float
+        Source-receiver distance (m)
+    dt : float
+        Sampling interval (s)
     freq : float
-        Central frequency of the Ricker wavelet in Hertz.
-    nt : int
-        Total number of discrete time steps.
-    dt : float
-        Time step duration in seconds.
-    n_shots : int
-        Total number of independent seismic shots.
-    n_shots_per_shot : int
-        Number of sources activated simultaneously per shot.
-    device : torch.device
-        The PyTorch device to allocate the tensors on.
-    plot_wavelet : bool
-        Flag to plot the generated wavelet.
-    figures_path : str
-        Directory path for saving the figure (e.g., 'outputs/figures/').
+        Peak/dominant frequency of the source wavelet (Hz), used to
+        estimate a default mute window width
+    peak_time : float, optional
+        Source wavelet delay (time-to-peak), in seconds
+        (e.g. 1.5/freq for a typical Ricker wavelet). Default is 0.0.
+    velocity : float, optional
+        Direct-wave velocity (m/s). Default is 1500.0.
+    flat_len : float, optional
+        Number of samples in the fully-muted (flat) region.
+        If None, defaults to one wavelet period (1/freq/dt).
+    taper_len : float, optional
+        Number of samples in the taper (transition) region.
+        If None, defaults to one wavelet period (1/freq/dt).
 
     Returns
     -------
-    source_amplitudes : torch.Tensor
-        Tensor of shape (n_shots, n_shots_per_shot, nt) containing the 
-        source wavelet amplitudes over time.
+    muted_trace : np.ndarray (float32)
+        Trace with the direct arrival muted.
     """
+    trace = np.asarray(trace, dtype=np.float32)
+    nt = trace.shape[0]
 
-    # Calculate the peak time based on the central frequency
-    peak_time = 1 / freq
+    # dominant wavelet period, used as a default scale reference
+    period = 1.0 / freq
+    if flat_len is None:
+        flat_len = period / dt
+    if taper_len is None:
+        taper_len = period / dt
 
-    # Generate the 1D Ricker wavelet using Deepwave
-    wavelet = deepwave.wavelets.ricker(freq, nt, dt, peak_time)
+    # direct-arrival time (linear moveout, "whole offset")
+    t_arrival = peak_time + abs(offset) / velocity
+    arrival_sample = t_arrival / dt
 
-    # Reshape and repeat the wavelet for all shots and sources per shot
-    source_amplitudes = (wavelet.repeat(n_shots, n_shots_per_shot, 1).to(device=device, dtype=torch.float32))
+    # time grid in samples
+    t_grid = np.arange(nt)
+    abs_dist = np.abs(t_grid - arrival_sample)
 
-    # =========================
-    # Optional Plotting
-    # =========================
-    if plot_wavelet:
-        fig, ax = plt.subplots(1, 1, figsize=(17, 3))
-        
-        t_axis = np.arange(nt) * dt
-        
-        ax.plot(t_axis, wavelet.numpy(), color='black', lw=1.5)
-        
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Amplitude')
-        ax.set_title(f'Ricker wavelet  f={freq} Hz,  peak at t0={peak_time:.4f} s')
-        
-        # Grid and ticks formatting for consistency
-        ax.grid(which='major', color='gray', linestyle='-', linewidth=0.5)
-        ax.grid(which='minor', color='gray', linestyle=':', linewidth=0.5, alpha=0.5)
-        ax.tick_params(which='both', direction='in', top=True, right=True)
-        
-        plt.tight_layout()
-        
-        # Save the figure using the provided path
-        fig.savefig(figures_path + 'ricker_wavelet.png', dpi=300, bbox_inches='tight')
-        plt.show()
+    half_flat = flat_len / 2.0
+    taper_start = half_flat
+    taper_end = half_flat + taper_len
 
-    return source_amplitudes
+    mask = np.ones(nt, dtype=np.float32)
 
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    # fully muted (flat) region
+    mask[abs_dist <= taper_start] = 0.0
 
-def simulate_elastic_shots(vp,vs,rho,source_amplitudes,source_locations,receiver_locations,dx,dz,dt,pml_width,pml_freq,accuracy,device,plot_shot_gathers,figures_path):
+    # cosine taper region (0 -> 1)
+    in_taper = (abs_dist > taper_start) & (abs_dist <= taper_end)
+    normalized_dist = (abs_dist[in_taper] - taper_start) / taper_len
+    mask[in_taper] = 0.5 * (1.0 - np.cos(normalized_dist * np.pi))
 
+    return trace * mask
+
+# ---------------------------------------------------------------------
+
+def normalize_data(
+    data,
+    method="trace_max",
+    axis=-1,
+    eps=1e-10,
+):
     """
-    Runs Deepwave's elastic forward modeling to generate synthetic shot gathers.
-    
-    Converts P-wave velocity, S-wave velocity, and density into Lamé parameters 
-    and buoyancy before running the wave propagator. Extracts the vertical 
-    particle velocity component simulating vertical geophones.
-    
+    Normalizes seismic data using different strategies.
+
     Parameters
     ----------
-    vp : torch.Tensor
-        P-wave velocity model.
-    vs : torch.Tensor
-        S-wave velocity model.
-    rho : torch.Tensor
-        Density model.
-    source_amplitudes : torch.Tensor
-        The source wavelet amplitudes over time.
-    source_locations : torch.Tensor
-        Tensor containing [z, x] grid indices for the sources.
-    receiver_locations : torch.Tensor
-        Tensor containing [z, x] grid indices for the receivers.
-    dx : float
-        Horizontal grid cell size in meters.
-    dz : float
-        Vertical grid cell size in meters.
-    dt : float
-        Time step duration in seconds.
-    pml_width : list
-        Number of absorbing boundary layers [top, bottom, left, right].
-    pml_freq : float
-        Dominant frequency of the source for PML tuning.
-    accuracy : int
-        Finite difference spatial accuracy order.
-    device : torch.device
-        PyTorch device to run the computation on.
-    plot_shot_gathers : bool
-        If True, plots a Common Shot Gather (CSG) for the first shot.
-    figures_path : str
-        Directory path for saving the generated figure.
-        
+    data : np.ndarray
+        Seismic data. Can be:
+        - 1D (nt,)                -> single trace
+        - 2D (n_traces, nt)       -> shot gather
+        - 3D (n_shots, n_rec, nt) -> full dataset
+    method : str, optional
+        Normalization method:
+        - "trace_max" : each trace divided by its own max absolute
+          amplitude (default). Preserves relative amplitude between
+          samples within a trace, but not between traces.
+        - "global_max" : entire array divided by a single global max
+          absolute amplitude. Preserves relative amplitude between
+          traces/shots.
+        - "rms" : each trace divided by its own RMS value.
+        - "global_rms" : entire array divided by the global RMS value.
+    axis : int, optional
+        Axis along which "trace_max"/"rms" are computed (default -1,
+        i.e. the time axis, assuming trace shape (..., nt)).
+    eps : float, optional
+        Small value to avoid division by zero.
+
     Returns
     -------
-    numpy.ndarray
-        The recorded vertical particle velocities (synthetic shot gathers) 
-        as a numpy array.
+    normalized_data : np.ndarray (float32)
+        Normalized data, same shape as input.
     """
-    
-    dtype = torch.float32
-    
-    # Ensure all inputs are on the correct device and use float32
-    vp = vp.to(device=device, dtype=dtype)
-    vs = vs.to(device=device, dtype=dtype)
-    rho = rho.to(device=device, dtype=dtype)
-    source_amplitudes = source_amplitudes.to(device=device, dtype=dtype)
-    source_locations = source_locations.to(device)
-    receiver_locations = receiver_locations.to(device)
+    data = np.asarray(data, dtype=np.float32)
 
-    # Convert to Lamé parameters and buoyancy
-    lam, mu, buoyancy = dwc.vpvsrho_to_lambmubuoyancy(vp, vs, rho)
+    if method == "trace_max":
+        norm_factor = np.max(np.abs(data), axis=axis, keepdims=True)
+        norm_factor = np.maximum(norm_factor, eps)
+        return data / norm_factor
 
-    # Run Elastic Propagator
-    out = elastic(
-        lam, 
-        mu, 
-        buoyancy,
-        grid_spacing=[dz, dx],
-        dt=dt,
-        source_amplitudes_y=source_amplitudes,
-        source_locations_y=source_locations,
-        receiver_locations_y=receiver_locations,
-        pml_width=pml_width,
-        pml_freq=pml_freq,
-        accuracy=accuracy
-    )
-    
-    # out[-2] corresponds to receiver_amplitudes_y (vertical component)
-    shot_gathers = out[-2].cpu().numpy()
-    
-    # ====================
-    # Plotting shot gather
-    # ====================
-    
-    if plot_shot_gathers:
-        # We plot the first shot (index 0) as a representative CSG
-        shot_idx = 0
-        nt = shot_gathers.shape[-1]
-        t = np.arange(nt) * dt
-        
-        # Convert grid indices to physical distances (meters)
-        src_x = source_locations[shot_idx, 0, 1].cpu().item() * dx
-        rec_x = receiver_locations[shot_idx, :, 1].cpu().numpy() * dx
-        
-        # Determine receiver spacing to scale wiggles so they don't overlap too much
-        rec_spacing = np.abs(rec_x[1] - rec_x[0]) if len(rec_x) > 1 else dx
-        wiggle_scaling = rec_spacing * 0.8  # Max amplitude spans 80% of the spacing
-        
-        fig, ax = plt.subplots(figsize=(20, 5))
-        
-        # Plot individual traces
-        for i in range(len(rec_x)):
-            trace = shot_gathers[shot_idx, i, :]
-            max_amp = np.max(np.abs(trace))
-            
-            # Normalize trace and apply dynamic scaling
-            if max_amp > 1e-12:
-                trace_norm = (trace / max_amp) * wiggle_scaling
-            else:
-                trace_norm = trace
-            
-            # Plot trace centered at its physical receiver X-coordinate
-            ax.plot(trace_norm + rec_x[i], t, c='k', lw=0.5)
+    elif method == "global_max":
+        norm_factor = np.max(np.abs(data))
+        norm_factor = max(norm_factor, eps)
+        return data / norm_factor
 
-        # Plot Source and Receivers at the top (t=0 line)
-        ax.scatter(src_x, 0, c='red', marker='*', s=250, edgecolors='k', label='Source', zorder=10)
-        ax.scatter(rec_x, np.zeros_like(rec_x), c='blue', marker='v', s=40, edgecolors='k', label='Receivers', zorder=9)
+    elif method == "rms":
+        norm_factor = np.sqrt(np.mean(data**2, axis=axis, keepdims=True))
+        norm_factor = np.maximum(norm_factor, eps)
+        return data / norm_factor
 
-        # ---------------------------------------------------------
-        # NEW: Draw Offset Dimension Line
-        # ---------------------------------------------------------
-        # Place the line down slightly in time (e.g., 8% of the total time window)
-        # so it sits between the surface markers and the wave arrivals.
-        offset_y_pos = dt * nt * 0.08 
-        offset_val = rec_x[0] - src_x
-        
-        # The |-| arrow style creates a dimension line
-        ax.annotate(
-            '', 
-            xy=(src_x, offset_y_pos), 
-            xytext=(rec_x[0], offset_y_pos),
-            arrowprops=dict(arrowstyle='|-|', color='black', lw=1.5, shrinkA=0, shrinkB=0)
+    elif method == "global_rms":
+        norm_factor = np.sqrt(np.mean(data**2))
+        norm_factor = max(norm_factor, eps)
+        return data / norm_factor
+
+    else:
+        raise ValueError(
+            f"Unknown method '{method}'. "
+            "Choose from: 'trace_max', 'global_max', 'rms', 'global_rms'."
         )
-        
-        # Add the text label exactly in the middle of the line
-        ax.text(
-            (src_x + rec_x[0]) / 2, 
-            offset_y_pos - (dt * nt * 0.015), # Slightly above the line (remember Y is inverted)
-            f'Offset = {offset_val:.1f} m',
-            ha='center', 
-            va='bottom', 
-            fontsize=12, 
-            fontweight='bold', 
-            color='black',
-            bbox=dict(facecolor='white', edgecolor='none', pad=2.0, alpha=0.9) # White background so traces don't clash with text
-        )
-        # ---------------------------------------------------------
-
-        ax.set_ylabel("Time (s)", fontsize=12)
-        ax.set_xlabel("Distance (m)", fontsize=12)
-        
-        # Invert Y-axis so time goes downward
-        ax.set_ylim(dt * nt, -dt * (nt * 0.05))  # Slight negative buffer to show the markers
-        
-        # Set X-axis limits with a buffer
-        ax.set_xlim(min(src_x, rec_x.min()) - 2*rec_spacing, max(src_x, rec_x.max()) + 2*rec_spacing)
-        
-        ax.set_title(f"Common Shot Gather (CSG) - Shot {shot_idx + 1}", fontsize=14, fontweight='bold')
-        ax.legend(loc='lower left') # Moved legend so it doesn't overlap the new offset text
-        
-        ax.grid(which='major', color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
-        
-        plt.tight_layout()
-        
-        if figures_path:
-            fig.savefig(figures_path+'common_shot_gather.png', dpi=300, bbox_inches='tight')
-            
-        plt.show()
     
-    return shot_gathers
+# ---------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------------------------------------------------
-
-def plot_seismic_model(ds, variables=("density", "vs", "vp", "vpvs"),receiver_x=None, figsize=(14, 10),path_output=None):
+def crop_seismogram_by_depth(seismogram, base_model, dz, dt, z_max):
     """
-    Plot seismic model variables from an xarray.Dataset.
+    Crops a 1D seismogram based on a maximum physical depth (z_max),
+    converting the limit to time using the reference velocity profile.
 
-    ds          : xarray.Dataset with dims (z, x) and coords 'distance', 'depth'
-    variables   : tuple of variable names to plot (one subplot each)
-    receiver_x  : array of receiver x-positions (m) for triangle markers; 
-                  if None, auto-spaced every 10 m
-    figsize     : figure size
-    output      : path to save the figure
+    Parameters
+    ----------
+    seismogram : ndarray
+        The seismic trace (observed or synthetic) to be cropped.
+    base_model : ndarray
+        Reference velocity profile (Vp) in m/s.
+    dz : float
+        Depth sampling interval (m).
+    dt : float
+        Time sampling interval (s).
+    z_max : float
+        Maximum physical depth (m) used to define the cutoff.
+
+    Returns
+    -------
+    cropped_seismogram : ndarray
+        Seismic trace cropped at the TWT corresponding to z_max.
+    """
+    # 1. Limit the base model to the maximum depth for the calculation
+    max_depth_idx = int(z_max / dz)
+    vp_cut = base_model[:max_depth_idx]
+    
+    # 2. Compute the Two-Way Travel Time (TWT) up to z_max
+    # Integration of slowness (1/v) along depth
+    twt_max = 2.0 * np.sum(dz / vp_cut)
+    
+    # 3. Convert TWT to the corresponding index in the trace (sample)
+    sample_max = int(twt_max / dt)
+    
+    # 4. Ensure the index does not exceed the length of the provided seismogram
+    sample_max = min(sample_max, len(seismogram))
+    
+    # 5. Perform the crop
+    return seismogram[:sample_max]
+
+# ---------------------------------------------------------------------
+
+def calculate_synthetic_trace(vp_profile, rho_profile, wavelet, dz, dt, nt):
+    """
+    1D convolutional seismic modeling with strict phase alignment.
+
+    Computes acoustic impedance and reflection coefficients from the
+    velocity/density profiles, converts the reflectivity series from
+    depth to two-way travel time (TWT) using interval slowness, maps
+    it onto a regular time grid, and convolves it with the source
+    wavelet to produce a synthetic seismic trace.
+
+    Parameters
+    ----------
+    vp_profile : ndarray
+        P-wave velocity profile (m/s), sampled at depth interval dz.
+    rho_profile : ndarray
+        Density profile (kg/m^3 or g/cm^3), same length as vp_profile.
+    wavelet : ndarray
+        Source wavelet used for convolution.
+    dz : float
+        Depth sampling interval (m).
+    dt : float
+        Time sampling interval (s) of the output trace.
+    nt : int
+        Number of time samples in the output trace.
+
+    Returns
+    -------
+    synthetic_trace : ndarray of shape (nt,)
+        Synthetic seismic trace, as float32.
+
+    Notes
+    -----
+    - Reflection coefficients (RC) are computed at each interface
+      (n-1 values for n samples) using the normal-incidence formula.
+    - TWT for each interface is obtained by cumulatively summing
+      2*dz/v_avg (average velocity between consecutive samples),
+      rather than by linear interpolation, to avoid time jitter.
+    - Reflectivity is placed at the nearest time sample (via rounding
+      and np.add.at) instead of being linearly interpolated, which
+      preserves reflector amplitude and avoids smearing.
+    - Convolution uses mode='same'; this assumes the wavelet is
+      zero-phase (centered on zero). If the wavelet is not centered,
+      the output may be shifted in time — consider using mode='full'
+      and manually cropping around the center instead.
+    """
+    # 1. Impedance and Reflection Coefficient (in the depth domain)
+    z = vp_profile * rho_profile
+    rc = np.diff(z) / (z[:-1] + z[1:])  # RC computed at each interface (n-1)
+    
+    # 2. Conversion to Time (TWT) using slowness-based interpolation
+    # dt_sample = (2 * dz) / v_i
+    dt_samples = (2.0 * dz) / ((vp_profile[:-1] + vp_profile[1:]) / 2.0)
+    twt_interface = np.cumsum(dt_samples)
+    
+    # 3. Direct mapping onto the time grid (avoids linear-interpolation jitter)
+    # Create a zero vector and insert reflection energy at the nearest sample
+    reflectivity_time = np.zeros(nt)
+    indices = np.round(twt_interface / dt).astype(int)
+    
+    # Filter out-of-bounds indices for safety
+    valid_mask = indices < nt
+    np.add.at(reflectivity_time, indices[valid_mask], rc[valid_mask])
+    
+    # 4. Convolution with the wavelet (use 'same' only if the wavelet is zero-centered)
+    # To avoid shifting, it's often better to use 'full' and crop the center
+    synthetic_trace = np.convolve(reflectivity_time, wavelet, mode='same')
+    
+    return synthetic_trace.astype(np.float32)
+
+# ---------------------------------------------------------------------
+# 2. DEAP OBJECTIVE (FITNESS) FUNCTION
+# ---------------------------------------------------------------------
+
+def phase_misfit_objective(individual, base_model, eof_basis, s_obs, f_peak, dt, dz, nt, z_max, rho_model):
+    """
+    Fitness function for the genetic algorithm, based on maximizing the
+    normalized cross-correlation (i.e., minimizing phase misfit) between
+    the observed and synthetic seismic traces.
+
+    Parameters
+    ----------
+    individual : list
+        DEAP chromosome (candidate EOF expansion coefficients).
+    base_model : ndarray
+        Background (reference) P-wave velocity profile (vp0).
+    eof_basis : ndarray
+        Matrix containing the retained empirical orthogonal functions (EOFs).
+    s_obs : ndarray
+        Observed (or target synthetic) seismic trace.
+    f_peak : float
+        Central frequency of the source wavelet / low-pass filter in Hz
+    dz : float
+        Depth sampling interval of vp_profile/rho_profile (m).
+    dt : float
+        Time sampling interval of the desired output trace (s).
+    nt : int
+        Number of time samples of the desired output trace.
+    z_max : int
+        Maximum depth for the inversion grid in meters (defines the TWT window).
+    rho_model : ndarray
+        Background density profile (rho0), kept fixed during inversion.
+
+    Returns
+    -------
+    tuple
+        (misfit,) — DEAP requires fitness values to be returned as a tuple.
     """
 
-    # Coordinates
-    x = ds["distance"].values
-    z = ds["depth"].values
+    # 1. Reconstruct the Vp profile from the EOF basis and the individual's genes
+    coefs = np.array(individual)
+    vp_reconstructed = base_model + np.dot(eof_basis, coefs)
 
-    if receiver_x is None:
-        receiver_x = np.arange(0, x.max() + 1, 10)
+    # Optional: apply a severe penalty if the algorithm suggests physically
+    # unrealistic water velocities (e.g., < 1400 m/s or > 1600 m/s), in
+    # order to avoid numerical instability.
+    if np.any(vp_reconstructed < 1400) or np.any(vp_reconstructed > 1600):
+        return 10.0,  # Return a very poor fitness value
 
-    n = len(variables)
-    fig, axes = plt.subplots(n, 1, figsize=figsize, sharex=True)
-    if n == 1:
-        axes = [axes]
+    wavelet = ricker_wavelet(f_peak, dt)
 
-    # Colormaps per variable
-    cmaps = {"density": "YlGnBu_r", "vs": "RdYlBu", "vp": "RdYlBu", "vpvs": "PuOr"}
-    labels = {
-        "density": "Density (g/cm³)",
-        "vs":      "Vs (m/s)",
-        "vp":      "Vp (m/s)",
-        "vpvs":    "Vp/Vs",
-    }
+    # 2. Forward Modeling
+    s_syn = calculate_synthetic_trace(vp_reconstructed, rho_model, wavelet, dz, dt, nt)
 
-    for ax, var in zip(axes, variables):
-        data = ds[var].values
-        cmap = cmaps.get(var, "viridis")
+    # 3. Mute
+    s_syn = mute_direct_arrival(trace=s_syn,offset=25,dt=dt,freq=f_peak,peak_time=1.5/f_peak)
+    s_syn = bandpass_filter(s_syn, dt=dt, f_peak=f_peak) 
 
-        pcm = ax.pcolormesh(
-            x, -z, data,
-            cmap=cmap, shading="auto",
-        )
-        cbar = fig.colorbar(pcm, ax=ax, pad=0.01, fraction=0.02)
-        cbar.set_label(labels.get(var, var), fontsize=10)
+    # 4. Crop
+    s_syn = crop_seismogram_by_depth(seismogram=s_syn, base_model=base_model, dz=dz, dt=dt, z_max=z_max)
+    s_syn = apply_edge_taper(s_syn)
 
-        # dashed vertical lines at receivers
-        for rx in receiver_x:
-            ax.axvline(rx, color="black", linestyle="--", linewidth=0.6, alpha=0.5)
+    # 5. Normalização consistente: 
+    s_syn = normalize_data(s_syn, method="trace_max")
 
-        ax.set_ylabel("Depth (m)", fontsize=10)
-        ax.set_ylim(-z.max(), 0)
-        ax.set_xlim(x.min(), x.max())
-        ax.set_title(labels.get(var, var), fontsize=11, loc="left")
+    # 6. NCC
+    norm_obs = np.linalg.norm(s_obs)
+    norm_syn = np.linalg.norm(s_syn)
 
-    axes[-1].set_xlabel("Distance (m)", fontsize=11)
-    fig.suptitle("Seismic Model", fontsize=13)
-    fig.savefig(path_output)
-    plt.tight_layout()
-    plt.show()
+    # Evita divisão por zero
+    if norm_syn < 1e-6 or norm_obs < 1e-6:
+        return 2.0,
 
-# -----------------------------------------------------------------------------------------------------
+    ncc = np.dot(s_obs, s_syn) / (norm_obs * norm_syn)
+    mse = np.mean((s_obs - s_syn)**2)
+
+    # Normalização Científica:
+    # O termo de fase (1 - NCC) está naturalmente limitado entre 0 e 2.
+    # O termo de MSE, após a normalização do traço, costuma ser bem menor.
+    # Para igualar, escalamos o MSE pelo seu desvio padrão ou pelo valor médio esperado.
+    # Uma forma simples de equilibrar sem parâmetros adicionais é:
+
+    misfit_phase = (1.0 - ncc)
+    misfit_amplitude = mse / np.mean(s_obs**2) # MSE relativo à energia do sinal observado
+
+    # Agora ambos estão normalizados em termos de "energia relativa"
+    misfit = 0.25 * misfit_phase + 0.75 * misfit_amplitude
+
+
+    return misfit,
